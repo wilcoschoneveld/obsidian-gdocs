@@ -84,7 +84,7 @@ export class GDocsView extends FileView {
 		this.embeddedWebview = mountGdocsWebview(
 			this.contentEl,
 			url,
-			getBrowserPartition(this.app),
+			getBrowserPartition(),
 		);
 	}
 

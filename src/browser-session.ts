@@ -1,52 +1,107 @@
-import { Platform, type App } from "obsidian";
+import { Platform } from "obsidian";
 
-interface AppWithWebviewPartition extends App {
-	getWebviewPartition?: () => string;
+/**
+ * Google's sign-in endpoints reject requests whose fetch metadata looks
+ * wrong: a missing `sec-fetch-dest` header (or `sec-fetch-dest: iframe`)
+ * yields a static 401 "request is malformed" page, and a user agent
+ * containing obsidian/electron tokens triggers the "This browser or app
+ * may not be secure" block.
+ *
+ * Obsidian's own core Web Viewer session deletes `sec-fetch-dest` and
+ * `sec-ch-ua`, which Google nowadays rejects as malformed, so instead of
+ * sharing that session this plugin configures its own persistent
+ * partition: the user agent keeps its genuine Chrome version (so it
+ * stays consistent with the untouched `sec-ch-ua` client hints) minus
+ * the obsidian/electron tokens, and `sec-fetch-dest: iframe` is
+ * rewritten to `document` rather than removed.
+ */
+const PARTITION = "persist:gdocs-browser";
+
+interface RequestHeadersDetails {
+	requestHeaders: Record<string, string>;
 }
 
-interface ElectronIpc {
-	ipcRenderer?: {
-		send: (channel: string, ...args: unknown[]) => void;
+type BeforeSendHeadersListener = (
+	details: RequestHeadersDetails,
+	callback: (response: { requestHeaders?: Record<string, string> }) => void,
+) => void;
+
+interface BrowserSession {
+	setUserAgent(userAgent: string): void;
+	webRequest: {
+		onBeforeSendHeaders(listener: BeforeSendHeadersListener | null): void;
 	};
 }
 
-let preparedPartition: string | null = null;
+interface ElectronRemote {
+	session: {
+		fromPartition(partition: string): BrowserSession;
+	};
+}
 
-/**
- * Resolve the per-vault browser session partition that Obsidian's core
- * Web Viewer uses, and ask the main process to prepare it.
- *
- * Sessions created through the "create-browser-session" channel get a
- * cleaned user agent (no obsidian/electron tokens) and have the
- * sec-ch-ua / sec-fetch-dest headers stripped, which is required for
- * Google sign-in to work inside a webview. Sharing the partition also
- * means one sign-in is shared with the core Web Viewer and persists
- * across restarts.
- */
-export function getBrowserPartition(app: App): string | null {
+let configured = false;
+
+function getRemoteSession(): BrowserSession | null {
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	const remote = require("@electron/remote") as ElectronRemote;
+	return remote.session?.fromPartition(PARTITION) ?? null;
+}
+
+function cleanedUserAgent(): string {
+	return navigator.userAgent
+		.split(" ")
+		.filter((token) => !/^(obsidian|electron)\//i.test(token))
+		.join(" ");
+}
+
+export function getBrowserPartition(): string | null {
 	if (Platform.isMobile) {
 		return null;
 	}
 
-	const partition = (app as AppWithWebviewPartition).getWebviewPartition?.();
-	if (!partition) {
-		console.warn("gdocs: app.getWebviewPartition unavailable, using default session");
-		return null;
-	}
-
-	if (preparedPartition !== partition) {
+	if (!configured) {
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-require-imports
-			const electron = require("electron") as ElectronIpc;
-			electron.ipcRenderer?.send("create-browser-session", partition, false);
-			preparedPartition = partition;
-			console.log(`gdocs: prepared browser session for partition "${partition}"`);
+			const session = getRemoteSession();
+			if (!session) {
+				console.warn("gdocs: remote session unavailable, using default session");
+				return null;
+			}
+			session.setUserAgent(cleanedUserAgent());
+			session.webRequest.onBeforeSendHeaders((details, callback) => {
+				const headers = details.requestHeaders;
+				for (const name of Object.keys(headers)) {
+					if (name.toLowerCase() === "sec-fetch-dest" && headers[name] === "iframe") {
+						headers[name] = "document";
+					}
+				}
+				callback({ requestHeaders: headers });
+			});
+			configured = true;
+			console.log(`gdocs: configured browser session "${PARTITION}"`);
 		} catch (error) {
 			// Not fatal: the webview still works with the default session,
 			// only Google sign-in may be rejected there.
-			console.warn("gdocs: could not prepare browser session", error);
+			console.warn("gdocs: could not configure browser session", error);
+			return null;
 		}
 	}
 
-	return partition;
+	return PARTITION;
+}
+
+/**
+ * Detach the header listener so a disabled/updated plugin does not leave
+ * a dangling remote callback behind (requests through the session would
+ * hang waiting for it).
+ */
+export function teardownBrowserSession(): void {
+	if (!configured) {
+		return;
+	}
+	configured = false;
+	try {
+		getRemoteSession()?.webRequest.onBeforeSendHeaders(null);
+	} catch {
+		// Session already gone; nothing to clean up.
+	}
 }

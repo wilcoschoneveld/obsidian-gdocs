@@ -87,7 +87,7 @@ export class GDocsEmbed extends Component {
 		this.webview = mountGdocsWebview(
 			containerEl,
 			parsed.url,
-			getBrowserPartition(this.app),
+			getBrowserPartition(),
 		);
 	}
 
