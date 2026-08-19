@@ -30,6 +30,7 @@ export function getBrowserPartition(app: App): string | null {
 
 	const partition = (app as AppWithWebviewPartition).getWebviewPartition?.();
 	if (!partition) {
+		console.warn("gdocs: app.getWebviewPartition unavailable, using default session");
 		return null;
 	}
 
@@ -39,9 +40,11 @@ export function getBrowserPartition(app: App): string | null {
 			const electron = require("electron") as ElectronIpc;
 			electron.ipcRenderer?.send("create-browser-session", partition, false);
 			preparedPartition = partition;
-		} catch {
+			console.log(`gdocs: prepared browser session for partition "${partition}"`);
+		} catch (error) {
 			// Not fatal: the webview still works with the default session,
 			// only Google sign-in may be rejected there.
+			console.warn("gdocs: could not prepare browser session", error);
 		}
 	}
 
