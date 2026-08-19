@@ -10,6 +10,7 @@ import {
 	showGdocsError,
 	showGdocsMobileFallback,
 } from "./gdocs-webview";
+import { getBrowserPartition } from "./browser-session";
 
 interface EmbedInfo {
 	containerEl: HTMLElement;
@@ -83,7 +84,11 @@ export class GDocsEmbed extends Component {
 			return;
 		}
 
-		this.webview = mountGdocsWebview(containerEl, parsed.url);
+		this.webview = mountGdocsWebview(
+			containerEl,
+			parsed.url,
+			getBrowserPartition(this.app),
+		);
 	}
 
 	onunload(): void {

@@ -16,6 +16,7 @@ import {
 	showGdocsError,
 	showGdocsMobileFallback,
 } from "./gdocs-webview";
+import { getBrowserPartition } from "./browser-session";
 
 export class GDocsView extends FileView {
 	plugin: GDocsPlugin;
@@ -80,7 +81,11 @@ export class GDocsView extends FileView {
 	private embedWebview(url: string): void {
 		this.clearWebview();
 		this.clearError();
-		this.embeddedWebview = mountGdocsWebview(this.contentEl, url);
+		this.embeddedWebview = mountGdocsWebview(
+			this.contentEl,
+			url,
+			getBrowserPartition(this.app),
+		);
 	}
 
 	private showError(

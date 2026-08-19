@@ -5,9 +5,16 @@ interface WebviewNewWindowEvent extends Event {
 	preventDefault(): void;
 }
 
-export function mountGdocsWebview(parent: HTMLElement, url: string): HTMLElement {
+export function mountGdocsWebview(
+	parent: HTMLElement,
+	url: string,
+	partition?: string | null,
+): HTMLElement {
 	const container = parent.createDiv({ cls: "gdocs-webview-container" });
 	const webview = activeDocument.createElement("webview");
+	if (partition) {
+		webview.setAttribute("partition", partition);
+	}
 	webview.setAttribute("src", url);
 	webview.setAttribute("webpreferences", "nativeWindowOpen=no");
 	webview.className = "gdocs-webview";

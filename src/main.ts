@@ -1,4 +1,5 @@
 import { Plugin } from "obsidian";
+import { getBrowserPartition } from "./browser-session";
 import { VIEW_TYPE_GDOCS } from "./constants";
 import { registerGdocsEmbeds } from "./gdocs-embed";
 import { GDocsView } from "./gdocs-view";
@@ -14,6 +15,10 @@ export default class GDocsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+
+		// Prepare the shared browser session before any webview attaches,
+		// so the session-level user agent is already cleaned.
+		getBrowserPartition(this.app);
 
 		this.registerView(
 			VIEW_TYPE_GDOCS,
